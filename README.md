@@ -140,3 +140,19 @@ Licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
 ## Disclaimer
 
 This project does not host or store any media. It is an independent client for playing publicly available streams. Users are responsible for complying with the laws of their country.
+
+## Web API / Render Deployment
+
+This repository also includes a headless HTTP API binary that reuses the existing provider, service, and resolver layer. The TUI remains the default application.
+
+Build and run locally:
+
+```bash
+cargo build --release --locked
+PORT=3000 RUST_LOG=info cargo run --release --bin moviebox-api
+curl http://localhost:3000/health
+```
+
+The API binds to `0.0.0.0:$PORT` for Render. Supported environment variables are `PORT`, `RUST_LOG`, and `ALLOWED_ORIGINS` (a comma-separated list of frontend origins). The primary endpoints are `/health`, `/api`, `/api/v1/providers`, `/api/v1/search`, `/api/v1/title/:id`, `/api/v1/title/:id/episodes`, and `/api/v1/stream/:id`. Full schemas and curl examples are in [`docs/api.md`](docs/api.md).
+
+For Render, use build command `cargo build --release --locked`, start command `./target/release/moviebox-api`, and health check path `/health`. The API resolves third-party sources at request time; it does not store media or temporary stream URLs. Users are responsible for complying with applicable law and provider terms.

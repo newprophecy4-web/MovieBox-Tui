@@ -164,6 +164,41 @@ impl MovieBoxService {
         }
     }
 
+    pub async fn episode_streams_typed(
+        &self,
+        provider: ProviderKind,
+        subject_id: &str,
+        season: usize,
+        episode: usize,
+    ) -> Result<Vec<crate::providers::models::Release>, ProviderError> {
+        match provider {
+            ProviderKind::MovieBox => crate::providers::ReleaseProvider::episode_streams(
+                &self.client, subject_id, season, episode,
+            )
+            .await,
+            ProviderKind::FourKHdHub => {
+                let client = self.fourk_client.as_ref().ok_or_else(|| {
+                    ProviderError::Unavailable("4KHDHub is unavailable".to_string())
+                })?;
+                crate::providers::ReleaseProvider::episode_streams(
+                    client, subject_id, season, episode,
+                )
+                .await
+            }
+            ProviderKind::BdixCircleFtp => crate::providers::ReleaseProvider::episode_streams(
+                &self.circleftp_client, subject_id, season, episode,
+            )
+            .await,
+            ProviderKind::BdixDhakaFlix => crate::providers::ReleaseProvider::episode_streams(
+                &self.dhakaflix_client, subject_id, season, episode,
+            )
+            .await,
+            ProviderKind::Addons => Err(ProviderError::Unavailable(
+                "Addons do not expose episode stream resolution through the shared API".to_string(),
+            )),
+        }
+    }
+
     pub async fn homepage(
         &self,
         tab_id: &str,
