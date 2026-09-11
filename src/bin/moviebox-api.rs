@@ -54,11 +54,67 @@ async fn search(State(state): State<AppState>, Query(params): Query<SearchQuery>
     let q = params.q.unwrap_or_default(); let q = q.trim();
     if q.is_empty() || q.len() > 120 { return error(StatusCode::BAD_REQUEST, "INVALID_REQUEST", "Search query must be 1-120 characters"); }
     let page = params.page.unwrap_or(1); if page == 0 || page > 100 { return error(StatusCode::BAD_REQUEST, "INVALID_REQUEST", "Page must be between 1 and 100"); }
-    let provider = match params.provider.as_deref() { Some(p) => match ProviderKind::parse(p) { Some(p) => p, None => return error(StatusCode::BAD_REQUEST, "INVALID_REQUEST", "Unsupported provider") }, None => ProviderKind::MovieBox };
-    match tokio::time::timeout(Duration::from_secs(20), state.service.search_typed(provider, q, page)).await {
-        Ok(Ok(items)) => Json(serde_json::json!({"query":q,"results":items.into_iter().take(50).map(|i| serde_json::json!({"id":encoded(i.id.provider,&i.id.value),"title":i.title,"type":media_type(i.media_type),"year":i.year,"poster":i.poster_url,"provider":i.id.provider.cache_key()})).collect::<Vec<_>>() })).into_response(),
-        Ok(Err(e)) => provider_error(e), Err(_) => error(StatusCode::GATEWAY_TIMEOUT, "UPSTREAM_ERROR", "Provider request timed out"),
+    let requested_provider = match params.provider.as_deref() {
+        Some(p) => match ProviderKind::parse(p) {
+            Some(p) => Some(p),
+            None => return error(StatusCode::BAD_REQUEST, "INVALID_REQUEST", "Unsupported provider"),
+        },
+        None => None,
+    };
+    if let Some(provider) = requested_provider {
+        return match tokio::time::timeout(Duration::from_secs(10), state.service.search_typed(provider, q, page)).await {
+            Ok(Ok(items)) => search_json(q, items),
+            Ok(Err(e)) => provider_error(e),
+            Err(_) => error(StatusCode::GATEWAY_TIMEOUT, "UPSTREAM_ERROR", "Provider request timed out"),
+        };
     }
+    let providers = [
+        ProviderKind::MovieBox,
+        ProviderKind::FourKHdHub,
+        ProviderKind::BdixCircleFtp,
+        ProviderKind::BdixDhakaFlix,
+        ProviderKind::Addons,
+    ];
+    let query = q.to_string();
+    let service = state.service.clone();
+    let requests = providers.into_iter().map(move |provider| {
+        let service = service.clone();
+        let query = query.clone();
+        async move {
+            let result = tokio::time::timeout(
+                Duration::from_secs(8),
+                service.search_typed(provider, &query, page),
+            )
+            .await;
+            (provider, result)
+        }
+    });
+    let mut combined = Vec::new();
+    let mut successful_providers = 0usize;
+    for (provider, result) in futures::future::join_all(requests).await {
+        match result {
+            Ok(Ok(items)) => {
+                successful_providers += 1;
+                combined.extend(items);
+            }
+            Ok(Err(err)) => log::warn!("API search provider={} failed: {}", provider.cache_key(), err),
+            Err(_) => log::warn!("API search provider={} timed out", provider.cache_key()),
+        }
+    }
+    if successful_providers == 0 {
+        return error(StatusCode::BAD_GATEWAY, "UPSTREAM_ERROR", "All search providers failed or timed out");
+    }
+    search_json(q, combined)
+}
+
+fn search_json(query: &str, items: Vec<moviebox_tui::providers::CatalogItem>) -> Response {
+    let mut seen = std::collections::HashSet::new();
+    let results = items.into_iter().filter_map(|i| {
+        let id = encoded(i.id.provider, &i.id.value);
+        if !seen.insert(id.clone()) { return None; }
+        Some(serde_json::json!({"id":id,"title":i.title,"type":media_type(i.media_type),"year":i.year,"poster":i.poster_url,"provider":i.id.provider.cache_key()}))
+    }).take(50).collect::<Vec<_>>();
+    Json(serde_json::json!({"query":query,"results":results})).into_response()
 }
 
 async fn title(State(state): State<AppState>, Path(id): Path<String>) -> Response {

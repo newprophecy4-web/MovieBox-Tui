@@ -153,6 +153,6 @@ PORT=3000 RUST_LOG=info cargo run --release --bin moviebox-api
 curl http://localhost:3000/health
 ```
 
-The API binds to `0.0.0.0:$PORT` for Render. Supported environment variables are `PORT`, `RUST_LOG`, and `ALLOWED_ORIGINS` (a comma-separated list of frontend origins). The primary endpoints are `/health`, `/api`, `/api/v1/providers`, `/api/v1/search`, `/api/v1/title/:id`, `/api/v1/title/:id/episodes`, and `/api/v1/stream/:id`. Full schemas and curl examples are in [`docs/api.md`](docs/api.md).
+The API binds to `0.0.0.0:$PORT` for Render. Supported environment variables are `PORT`, `RUST_LOG`, and `ALLOWED_ORIGINS` (a comma-separated list of frontend origins). The primary endpoints are `/health`, `/api`, `/api/v1/providers`, `/api/v1/search`, `/api/v1/title/{id}`, `/api/v1/title/{id}/episodes`, and `/api/v1/stream/{id}`. Search without a provider queries providers independently with bounded timeouts and returns partial real results when available. Full schemas and curl examples are in [`docs/api.md`](docs/api.md).
 
 For Render, use build command `cargo build --release --locked`, start command `./target/release/moviebox-api`, and health check path `/health`. The API resolves third-party sources at request time; it does not store media or temporary stream URLs. Users are responsible for complying with applicable law and provider terms.
