@@ -43,7 +43,7 @@ fn provider_error(e: ProviderError) -> Response {
 fn media_type(t: MediaType) -> &'static str { match t { MediaType::Movie => "movie", MediaType::Series => "series" } }
 
 async fn health() -> Json<serde_json::Value> { Json(serde_json::json!({"status":"ok","service":"moviebox-api"})) }
-async fn api_info() -> Json<serde_json::Value> { Json(serde_json::json!({"name":"MovieBox API","version":"1.0.0","endpoints":{"health":"/health","search":"/api/v1/search?q=...","title":"/api/v1/title/:id","episodes":"/api/v1/title/:id/episodes","stream":"/api/v1/stream/:id","providers":"/api/v1/providers"}})) }
+async fn api_info() -> Json<serde_json::Value> { Json(serde_json::json!({"name":"MovieBox API","version":"1.0.0","endpoints":{"health":"/health","search":"/api/v1/search?q=...","title":"/api/v1/title/{id}","episodes":"/api/v1/title/{id}/episodes","stream":"/api/v1/stream/{id}","providers":"/api/v1/providers"}})) }
 
 async fn providers(State(state): State<AppState>) -> Json<serde_json::Value> {
     let items: Vec<_> = [ProviderKind::MovieBox, ProviderKind::FourKHdHub, ProviderKind::BdixCircleFtp, ProviderKind::BdixDhakaFlix, ProviderKind::Addons].into_iter().map(|p| { let c = state.service.capabilities(p); serde_json::json!({"id":p.cache_key(),"name":p.label(),"search":c.supports_search,"details":true,"episodes":c.supports_series,"streams":matches!(p, ProviderKind::MovieBox|ProviderKind::FourKHdHub|ProviderKind::BdixCircleFtp|ProviderKind::BdixDhakaFlix)}) }).collect();
@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     moviebox_tui::logging::init();
     let state = AppState { service: Arc::new(MovieBoxService::new()) };
     let cors = match std::env::var("ALLOWED_ORIGINS") { Ok(v) => { let origins = v.split(',').filter_map(|s| s.trim().parse::<HeaderValue>().ok()).collect::<Vec<_>>(); CorsLayer::new().allow_origin(origins).allow_methods([axum::http::Method::GET]).allow_headers([header::CONTENT_TYPE]) }, Err(_) => CorsLayer::very_permissive() };
-    let app = Router::new().route("/health", get(health)).route("/api", get(api_info)).route("/api/v1/providers", get(providers)).route("/api/v1/search", get(search)).route("/api/v1/title/:id", get(title)).route("/api/v1/title/:id/episodes", get(episodes)).route("/api/v1/stream/:id", get(stream)).with_state(state).layer(cors).layer(TraceLayer::new_for_http());
+    let app = Router::new().route("/health", get(health)).route("/api", get(api_info)).route("/api/v1/providers", get(providers)).route("/api/v1/search", get(search)).route("/api/v1/title/{id}", get(title)).route("/api/v1/title/{id}/episodes", get(episodes)).route("/api/v1/stream/{id}", get(stream)).with_state(state).layer(cors).layer(TraceLayer::new_for_http());
     let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "3000".into()).parse()?; let addr = SocketAddr::from(([0,0,0,0],port)); let listener = tokio::net::TcpListener::bind(addr).await?; log::info!("moviebox-api listening on {addr}"); axum::serve(listener, app).await?; Ok(())
 }
 
