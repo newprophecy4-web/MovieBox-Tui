@@ -6,7 +6,9 @@ use crate::providers::Provider;
 use crate::providers::bdix::circleftp::CircleFtpClient;
 use crate::providers::bdix::dhakaflix::client::DhakaFlixClient;
 use crate::providers::fourkhdhub::FourKHdHubClient;
-use crate::providers::models::{CatalogItem, MediaDetails, ProviderError, ProviderKind};
+use crate::providers::models::{
+    CatalogItem, MediaDetails, PlaybackSource, ProviderError, ProviderKind, Release,
+};
 use crate::providers::moviebox::client::MovieBoxClient;
 
 #[derive(Clone)]
@@ -193,6 +195,75 @@ impl MovieBoxService {
                 &self.dhakaflix_client, subject_id, season, episode,
             )
             .await,
+            ProviderKind::Addons => Err(ProviderError::Unavailable(
+                "Addons do not expose episode stream resolution through the shared API".to_string(),
+            )),
+        }
+    }
+
+    pub async fn resolve_episode_playback_typed(
+        &self,
+        provider: ProviderKind,
+        subject_id: &str,
+        season: usize,
+        episode: usize,
+    ) -> Result<Vec<(Release, PlaybackSource)>, ProviderError> {
+        const MAX_RELEASE_ATTEMPTS: usize = 5;
+        let releases = self
+            .episode_streams_typed(provider, subject_id, season, episode)
+            .await?;
+
+        match provider {
+            ProviderKind::FourKHdHub => {
+                let client = self.fourk_client.as_ref().ok_or_else(|| {
+                    ProviderError::Unavailable("4KHDHub is unavailable".to_string())
+                })?;
+                let mut resolved = Vec::new();
+                let mut last_error = None;
+                for release in releases.into_iter().take(MAX_RELEASE_ATTEMPTS) {
+                    match client.resolve_release(&release).await {
+                        Ok(source) => resolved.push((release, source)),
+                        Err(error) => last_error = Some(ProviderError::from(error)),
+                    }
+                }
+                if resolved.is_empty() {
+                    Err(last_error.unwrap_or_else(|| {
+                        ProviderError::Unavailable(
+                            "No provider release could be resolved".to_string(),
+                        )
+                    }))
+                } else {
+                    Ok(resolved)
+                }
+            }
+            ProviderKind::MovieBox
+            | ProviderKind::BdixCircleFtp
+            | ProviderKind::BdixDhakaFlix => {
+                let resolved = releases
+                    .into_iter()
+                    .take(MAX_RELEASE_ATTEMPTS)
+                    .filter_map(|release| {
+                        let mirror = release.mirrors.first()?;
+                        Some((
+                            release,
+                            PlaybackSource {
+                                provider,
+                                url: mirror.resolver_url.clone(),
+                                headers: mirror.headers.clone(),
+                                subtitle: None,
+                                source_label: mirror.label.clone(),
+                            },
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                if resolved.is_empty() {
+                    Err(ProviderError::Unavailable(
+                        "No playable provider release was returned".to_string(),
+                    ))
+                } else {
+                    Ok(resolved)
+                }
+            }
             ProviderKind::Addons => Err(ProviderError::Unavailable(
                 "Addons do not expose episode stream resolution through the shared API".to_string(),
             )),

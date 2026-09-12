@@ -18,7 +18,7 @@ The API is a headless HTTP layer over the repository's existing provider and res
 - `GET /api/v1/search?q=naruto&provider=moviebox&page=1` — normalized real provider results. Query length is limited to 120 characters and results are capped at 50.
 - `GET /api/v1/title/{id}` — normalized title metadata.
 - `GET /api/v1/title/{id}/episodes?season=1` — seasons and episodes when the provider exposes them.
-- `GET /api/v1/stream/{id}` — current release/mirror sources. Stream IDs identify provider, title, season, and episode; URLs are resolved at request time and are not persisted.
+- `GET /api/v1/stream/{id}` — current provider-resolved playback sources. Stream IDs identify provider, title, season, and episode; URLs are resolved at request time and are not persisted. 4KHDHub releases use the existing provider resolver and preflight flow rather than returning HubCloud/HubDrive resolver URLs directly. Only safe `Referer` and `User-Agent` playback headers are exposed; sensitive cookies, tokens, and credentials are withheld.
 
 When `provider` is omitted from search, all configured providers are queried independently with an eight-second per-provider deadline. Successful providers contribute real results even if another provider fails or times out. An explicit `provider` query uses a ten-second deadline for that provider only. If every provider fails, the API returns a JSON `502` error.
 

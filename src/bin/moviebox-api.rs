@@ -145,7 +145,29 @@ async fn stream(State(state): State<AppState>, Path(id): Path<String>) -> Respon
     let raw = match String::from_utf8(bytes) { Ok(v)=>v, Err(_)=>return error(StatusCode::BAD_REQUEST,"INVALID_REQUEST","Malformed stream ID") };
     let parts: Vec<_> = raw.split('|').collect(); if parts.len()!=4 { return error(StatusCode::BAD_REQUEST,"INVALID_REQUEST","Stream ID must identify provider, title, season, and episode"); }
     let provider = match ProviderKind::parse(parts[0]) { Some(p)=>p, None=>return error(StatusCode::BAD_REQUEST,"INVALID_REQUEST","Unsupported provider") }; let season: usize=match parts[2].parse(){Ok(v) if v>0=>v,_=>return error(StatusCode::BAD_REQUEST,"INVALID_REQUEST","Invalid season")}; let episode: usize=match parts[3].parse(){Ok(v) if v>0=>v,_=>return error(StatusCode::BAD_REQUEST,"INVALID_REQUEST","Invalid episode")};
-    match tokio::time::timeout(Duration::from_secs(35), state.service.episode_streams_typed(provider,parts[1],season,episode)).await { Ok(Ok(releases)) => { let sources = releases.into_iter().flat_map(|r| { let quality = r.quality.clone(); let codec = r.codec.clone(); r.mirrors.into_iter().map(move |m| serde_json::json!({"url":m.resolver_url,"quality":quality,"type":"unknown","format":codec,"label":m.label})) }).collect::<Vec<_>>(); Json(serde_json::json!({"id":id,"title":null,"sources":sources,"subtitles":[]})).into_response() }, Ok(Err(e))=>provider_error(e), Err(_)=>error(StatusCode::GATEWAY_TIMEOUT,"RESOLUTION_FAILED","Stream resolution timed out") }
+    match tokio::time::timeout(Duration::from_secs(35), state.service.resolve_episode_playback_typed(provider,parts[1],season,episode)).await {
+        Ok(Ok(resolved)) => {
+            let sources = resolved.into_iter().map(|(release, source)| {
+                let headers = source.headers.into_iter().filter_map(|(name, value)| {
+                    if name.eq_ignore_ascii_case("referer") || name.eq_ignore_ascii_case("user-agent") {
+                        Some(serde_json::json!({"name":name,"value":value}))
+                    } else { None }
+                }).collect::<Vec<_>>();
+                serde_json::json!({
+                    "url": source.url,
+                    "quality": release.quality,
+                    "type": "unknown",
+                    "format": release.codec,
+                    "provider": source.provider.cache_key(),
+                    "label": source.source_label,
+                    "headers": headers,
+                })
+            }).collect::<Vec<_>>();
+            Json(serde_json::json!({"id":id,"title":null,"sources":sources,"subtitles":[]})).into_response()
+        }
+        Ok(Err(e))=>provider_error(e),
+        Err(_)=>error(StatusCode::GATEWAY_TIMEOUT,"RESOLUTION_FAILED","Stream resolution timed out")
+    }
 }
 
 #[tokio::main]
