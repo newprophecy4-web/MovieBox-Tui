@@ -244,14 +244,17 @@ impl MovieBoxService {
                     .take(MAX_RELEASE_ATTEMPTS)
                     .filter_map(|release| {
                         let mirror = release.mirrors.first()?;
+                        let mirror_url = mirror.resolver_url.clone();
+                        let mirror_headers = mirror.headers.clone();
+                        let mirror_label = mirror.label.clone();
                         Some((
                             release,
                             PlaybackSource {
                                 provider,
-                                url: mirror.resolver_url.clone(),
-                                headers: mirror.headers.clone(),
+                                url: mirror_url,
+                                headers: mirror_headers,
                                 subtitle: None,
-                                source_label: mirror.label.clone(),
+                                source_label: mirror_label,
                             },
                         ))
                     })
